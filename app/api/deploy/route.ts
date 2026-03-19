@@ -128,7 +128,6 @@ export async function POST(req: NextRequest) {
         repo: repoName,
         ref: 'main',
       },
-      projectId: project.id,
       target: 'production',
     }) as { url?: string; id?: string; error?: { message: string } }
 
