@@ -11,12 +11,6 @@ function slugify(name: string): string {
     + '-' + Date.now().toString(36)
 }
 
-function extractFile(text: string, filename: string): string | null {
-  const escaped = filename.replace('.', '\\.').replace('/', '\\/')
-  const r = new RegExp(`\`\`\`(?:\\w+)\\s+filename="${escaped}"\\n([\\s\\S]*?)\`\`\``)
-  const m = text.match(r)
-  return m ? m[1].trim() : null
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,39 +37,43 @@ export async function POST(req: NextRequest) {
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
-      system: `You generate exactly 2 files for instant Vercel deployment.
-Output ONLY these 2 code blocks, nothing else:
+      system: `You are a deployment code generator. You MUST respond with ONLY valid JSON — no markdown, no explanation, nothing else.
 
-\`\`\`html filename="index.html"
-<!-- Complete single-file app. Pure HTML/CSS/JS. No frameworks, no imports.
-     Call /api/chat via fetch() for AI. Fully functional and polished UI. -->
-\`\`\`
+The JSON must have exactly this shape:
+{"html": "...full index.html content...", "api": "...full api/chat.js content..."}
 
-\`\`\`javascript filename="api/chat.js"
-// Vercel edge serverless. Use CommonJS require() not ES import.
-// export const config = { runtime: 'edge' }
-// export default async function handler(req) { streams SSE to client }
-// Use: const Anthropic = require('@anthropic-ai/sdk')
-\`\`\`
+Rules for index.html:
+- Pure HTML/CSS/JS, no frameworks, no external imports
+- Beautiful, polished UI
+- Calls /api/chat via fetch() for AI responses
+- Renders streaming SSE responses
 
-Rules:
-- index.html must be a complete, working, beautiful UI
-- api/chat.js must use CommonJS (require, not import) and stream SSE
-- No TypeScript, no Next.js, no build step needed
-- ANTHROPIC_API_KEY is available as process.env.ANTHROPIC_API_KEY`,
+Rules for api/chat.js:
+- CommonJS only: const Anthropic = require('@anthropic-ai/sdk')
+- exports: module.exports = async function handler(req, res) { ... }
+- Streams Claude responses as SSE (text/event-stream)
+- Uses process.env.ANTHROPIC_API_KEY
+- No edge runtime — standard Node.js serverless`,
       messages: [{
         role: 'user',
-        content: `Generate the 2 deployable files for this product:\n\n${specSnippet}`,
+        content: `Generate the deployable files for this product. Return ONLY JSON:\n\n${specSnippet}`,
       }],
     })
 
-    const generatedText = msg.content[0].type === 'text' ? msg.content[0].text : ''
+    const rawText = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
 
-    const htmlContent = extractFile(generatedText, 'index.html')
-    const apiContent = extractFile(generatedText, 'api/chat.js')
+    // Strip any accidental markdown wrapping
+    const jsonText = rawText.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim()
 
-    if (!htmlContent || !apiContent) {
-      return NextResponse.json({ error: 'Failed to generate deployable files' }, { status: 500 })
+    let htmlContent: string
+    let apiContent: string
+    try {
+      const parsed = JSON.parse(jsonText) as { html?: string; api?: string }
+      htmlContent = parsed.html ?? ''
+      apiContent = parsed.api ?? ''
+      if (!htmlContent || !apiContent) throw new Error('Missing fields')
+    } catch {
+      return NextResponse.json({ error: 'Failed to generate deployable files — try again' }, { status: 500 })
     }
 
     const pkgJson = JSON.stringify({
