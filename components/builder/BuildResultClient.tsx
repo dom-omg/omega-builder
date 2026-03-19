@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Copy, Check, ChevronRight, Loader2, Download, ArrowLeft } from 'lucide-react'
+import { Copy, Check, ChevronRight, Loader2, Download, ArrowLeft, Rocket, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils/cn'
 import { SECTION_HEADERS, type SectionHeader } from '@/lib/ai/prompts'
@@ -144,6 +144,9 @@ export default function BuildResultClient({
   const [output, setOutput] = useState(initialOutput)
   const [status, setStatus] = useState(initialStatus)
   const [activeSection, setActiveSection] = useState<SectionHeader>('PRODUCT INTERPRETATION')
+  const [deploying, setDeploying] = useState(false)
+  const [liveUrl, setLiveUrl] = useState<string | null>(null)
+  const [deployError, setDeployError] = useState<string | null>(null)
   const outputRef = useRef(output)
   outputRef.current = output
 
@@ -209,6 +212,25 @@ export default function BuildResultClient({
 
   const availableSections = SECTION_HEADERS.filter(h => sections[h] || status === 'generating')
 
+  async function deployLive() {
+    setDeploying(true)
+    setDeployError(null)
+    try {
+      const res = await fetch('/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buildId }),
+      })
+      const data = await res.json() as { url?: string; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Deploy failed')
+      setLiveUrl(data.url ?? null)
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Deploy failed')
+    } finally {
+      setDeploying(false)
+    }
+  }
+
   function downloadAll() {
     const content = codeBlocks
       .map(b => `// ===== ${b.filename} =====\n\n${b.code}`)
@@ -273,13 +295,38 @@ export default function BuildResultClient({
               <p className="text-sm text-text-soft italic">&ldquo;{initialPrompt}&rdquo;</p>
             </div>
             {status === 'complete' && codeBlocks.length > 0 && (
-              <button
-                onClick={downloadAll}
-                className="flex items-center gap-2 text-xs bg-surface border border-border hover:border-border-bright text-text-soft hover:text-text px-3 py-2 rounded-lg transition-colors shrink-0"
-              >
-                <Download size={12} />
-                Download code
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {liveUrl ? (
+                  <a
+                    href={liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-xs bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <ExternalLink size={12} />
+                    Open live app
+                  </a>
+                ) : (
+                  <button
+                    onClick={deployLive}
+                    disabled={deploying}
+                    className="flex items-center gap-2 text-xs bg-primary hover:bg-primary-hover text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+                  >
+                    {deploying ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
+                    {deploying ? 'Deploying...' : 'Deploy live'}
+                  </button>
+                )}
+                <button
+                  onClick={downloadAll}
+                  className="flex items-center gap-2 text-xs bg-surface border border-border hover:border-border-bright text-text-soft hover:text-text px-3 py-2 rounded-lg transition-colors"
+                >
+                  <Download size={12} />
+                  Code
+                </button>
+              </div>
+            )}
+            {deployError && (
+              <p className="text-xs text-red-400 mt-1">{deployError}</p>
             )}
           </div>
 
