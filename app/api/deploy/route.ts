@@ -53,25 +53,53 @@ export async function POST(req: NextRequest) {
 
     const projectName = slugify(build.product_name ?? 'app')
 
-    // Build Vercel file payload
-    const vercelFiles = liveFiles.map(f => ({
-      file: f.filename,
-      data: Buffer.from(f.code).toString('base64'),
-      encoding: 'base64' as const,
-    }))
+    const pkgJson = JSON.stringify({
+      name: projectName,
+      version: '1.0.0',
+      dependencies: { '@anthropic-ai/sdk': '^0.39.0' },
+    }, null, 2)
 
-    // Add package.json so Vercel installs @anthropic-ai/sdk
-    vercelFiles.push({
-      file: 'package.json',
-      data: Buffer.from(JSON.stringify({
-        name: projectName,
-        version: '1.0.0',
-        dependencies: { '@anthropic-ai/sdk': '^0.39.0' },
-      }, null, 2)).toString('base64'),
-      encoding: 'base64',
-    })
+    const allFiles = [
+      ...liveFiles,
+      { filename: 'package.json', code: pkgJson },
+    ]
 
-    // Deploy via Vercel file API — no build step needed
+    // Step 1: Upload each file to Vercel, get SHA back
+    async function uploadFile(content: string) {
+      const buf = Buffer.from(content, 'utf-8')
+      const r = await fetch(`https://api.vercel.com/v2/files?teamId=${VERCEL_TEAM}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${VERCEL_TOKEN}`,
+          'Content-Type': 'application/octet-stream',
+          'x-now-digest': await sha1(buf),
+          'x-now-size': String(buf.length),
+        },
+        body: buf,
+      })
+      // 200 = uploaded, 409 = already exists (both fine)
+      if (r.status !== 200 && r.status !== 409) {
+        const t = await r.text()
+        throw new Error(`File upload failed ${r.status}: ${t.slice(0, 200)}`)
+      }
+      return await sha1(buf)
+    }
+
+    async function sha1(buf: Buffer): Promise<string> {
+      const view = new Uint8Array(buf)
+      const hashBuf = await crypto.subtle.digest('SHA-1', view)
+      return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
+    }
+
+    const fileRefs = await Promise.all(
+      allFiles.map(async f => ({
+        file: f.filename,
+        sha: await uploadFile(f.code),
+        size: Buffer.byteLength(f.code, 'utf-8'),
+      }))
+    )
+
+    // Step 2: Create deployment referencing files by SHA
     const res = await fetch(`https://api.vercel.com/v13/deployments?teamId=${VERCEL_TEAM}`, {
       method: 'POST',
       headers: {
@@ -80,7 +108,7 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         name: projectName,
-        files: vercelFiles,
+        files: fileRefs,
         target: 'production',
         projectSettings: {
           framework: null,
