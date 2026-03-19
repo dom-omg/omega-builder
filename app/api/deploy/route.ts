@@ -11,6 +11,17 @@ function slugify(name: string): string {
     + '-' + Date.now().toString(36)
 }
 
+async function generateFile(prompt: string, systemPrompt: string): Promise<string> {
+  const msg = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const text = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
+  // Strip any accidental markdown wrapping
+  return text.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim()
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,49 +42,40 @@ export async function POST(req: NextRequest) {
     if (!build) return NextResponse.json({ error: 'Build not found' }, { status: 404 })
     if (build.status !== 'complete') return NextResponse.json({ error: 'Build not complete' }, { status: 400 })
 
-    // ── Step 1: Ask Claude to generate 2 deployable files ──
-    const specSnippet = (build.output ?? build.prompt ?? '').slice(0, 4000)
+    const specSnippet = (build.output ?? build.prompt ?? '').slice(0, 3000)
 
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      system: `You are a deployment code generator. You MUST respond with ONLY valid JSON — no markdown, no explanation, nothing else.
+    // ── Step 1: Generate index.html ──
+    const htmlContent = await generateFile(
+      `Generate a complete, fully functional index.html for this product:\n\n${specSnippet}\n\nReturn ONLY the raw HTML file content. No explanation, no markdown, no code fences.`,
+      `You are a web app generator. Output ONLY a complete index.html file — pure HTML/CSS/JS, no frameworks, no external imports except CDNs.
+Rules:
+- Beautiful, polished, production-quality UI
+- For any AI/chat feature, call fetch('/api/chat') with POST { messages: [...] }
+- Render streaming SSE responses from /api/chat
+- No build step required
+- Output ONLY raw HTML starting with <!DOCTYPE html>`
+    )
 
-The JSON must have exactly this shape:
-{"html": "...full index.html content...", "api": "...full api/chat.js content..."}
+    if (!htmlContent || !htmlContent.includes('<html')) {
+      return NextResponse.json({ error: 'Failed to generate HTML — try again' }, { status: 500 })
+    }
 
-Rules for index.html:
-- Pure HTML/CSS/JS, no frameworks, no external imports
-- Beautiful, polished UI
-- Calls /api/chat via fetch() for AI responses
-- Renders streaming SSE responses
+    // ── Step 2: Generate api/chat.js ──
+    const apiContent = await generateFile(
+      `Generate a Vercel serverless API handler api/chat.js for this product:\n\n${specSnippet}\n\nReturn ONLY the raw JavaScript file content. No explanation, no markdown, no code fences.`,
+      `You are a serverless API generator. Output ONLY a complete api/chat.js file.
+Rules:
+- CommonJS ONLY: const Anthropic = require('@anthropic-ai/sdk')
+- Export: module.exports = async function handler(req, res) { ... }
+- Stream Claude responses as SSE (text/event-stream)
+- Use process.env.ANTHROPIC_API_KEY
+- Standard Node.js serverless — NO edge runtime, NO export const config
+- Handle CORS: res.setHeader('Access-Control-Allow-Origin', '*')
+- Output ONLY raw JavaScript starting with const Anthropic = require(...)`
+    )
 
-Rules for api/chat.js:
-- CommonJS only: const Anthropic = require('@anthropic-ai/sdk')
-- exports: module.exports = async function handler(req, res) { ... }
-- Streams Claude responses as SSE (text/event-stream)
-- Uses process.env.ANTHROPIC_API_KEY
-- No edge runtime — standard Node.js serverless`,
-      messages: [{
-        role: 'user',
-        content: `Generate the deployable files for this product. Return ONLY JSON:\n\n${specSnippet}`,
-      }],
-    })
-
-    const rawText = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
-
-    // Strip any accidental markdown wrapping
-    const jsonText = rawText.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim()
-
-    let htmlContent: string
-    let apiContent: string
-    try {
-      const parsed = JSON.parse(jsonText) as { html?: string; api?: string }
-      htmlContent = parsed.html ?? ''
-      apiContent = parsed.api ?? ''
-      if (!htmlContent || !apiContent) throw new Error('Missing fields')
-    } catch {
-      return NextResponse.json({ error: 'Failed to generate deployable files — try again' }, { status: 500 })
+    if (!apiContent || !apiContent.includes('require')) {
+      return NextResponse.json({ error: 'Failed to generate API — try again' }, { status: 500 })
     }
 
     const pkgJson = JSON.stringify({
@@ -82,7 +84,7 @@ Rules for api/chat.js:
       dependencies: { '@anthropic-ai/sdk': '^0.39.0' },
     }, null, 2)
 
-    // ── Step 2: Deploy to Vercel ───────────────────────────
+    // ── Step 3: Deploy to Vercel ──
     const projectName = slugify(build.product_name ?? 'app')
 
     const res = await fetch(`https://api.vercel.com/v13/deployments?teamId=${VERCEL_TEAM}`, {
