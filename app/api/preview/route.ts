@@ -27,42 +27,39 @@ export async function POST(req: NextRequest) {
 
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      system: `You output ONLY raw HTML body content — no <!DOCTYPE>, no <html>, no <head>, no <body> tags, no <style> tags, no <script> tags.
+      max_tokens: 8000,
+      system: `You generate a complete self-contained HTML app for live preview inside an iframe.
 
-Output ONLY the inner HTML that goes inside <body>: divs, sections, headers, cards, text, buttons, etc.
+The app can use fetch('/api/chat') for AI features — this endpoint is available and works.
 
-Rules:
-- Use inline style attributes on every element for all styling
-- ALL content must be hardcoded text and elements — no JavaScript, no dynamic rendering
-- Include realistic fake/demo data: names, numbers, messages, metrics, whatever fits
-- Rich, detailed content — multiple sections, cards, lists
-- Dark theme: use style="background:#1e293b" or similar dark blues/grays, light text
-- Make it look like a real working app with data in it`,
+/api/chat accepts: POST { messages: [{role, content}], system?: string }
+It streams SSE events. Each event is: data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
+Stream ends with: data: {"type":"message_stop"}
+
+STRUCTURE RULES:
+- Output a complete <!DOCTYPE html> page
+- ALL initial UI content must be hardcoded HTML — never JS-rendered on load
+- Use a <style> block in <head> for styling (dark theme, polished)
+- JS is allowed for: chat interactions, sending messages, rendering AI responses
+- Include a realistic hardcoded demo conversation or sample data so the app looks full immediately
+- The product must be usable: user can type and chat with the AI right away
+
+STYLE:
+- Dark theme: background #0f172a, cards #1e293b, text #f1f5f9
+- Clean, modern, polished — not generic
+- Fully responsive`,
       messages: [{
         role: 'user',
-        content: `Generate the body content (inline-styled HTML only, no scripts, no style tags) for this product demo. Include the product name as an <h1> and lots of realistic demo data:\n\n${specSnippet}`,
+        content: `Generate a complete interactive preview for this product. Include hardcoded demo content visible immediately AND a working chat interface that calls /api/chat:\n\n${specSnippet}\n\nReturn a complete <!DOCTYPE html> page.`,
       }],
     })
 
-    const bodyContent = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
+    const text = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
+    const html = text.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim()
 
-    if (!bodyContent) {
+    if (!html || !html.includes('<!DOCTYPE')) {
       return NextResponse.json({ error: 'Failed to generate preview' }, { status: 500 })
     }
-
-    // Wrap in a guaranteed-render HTML shell
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Preview</title>
-</head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh;">
-${bodyContent}
-</body>
-</html>`
 
     return NextResponse.json({ html })
   } catch (err) {
