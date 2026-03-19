@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@/lib/supabase/server'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-01-27.acacia' })
+function getStripe() {
+  return new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2026-02-25.clover' })
+}
 
 const PRICE_MAP: Record<string, string> = {
   pro: process.env.STRIPE_PRICE_PRO!,
@@ -25,6 +27,7 @@ export async function GET(req: NextRequest) {
       .eq('id', user.id)
       .single()
 
+    const stripe = getStripe()
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: profile?.stripe_customer_id ?? undefined,
