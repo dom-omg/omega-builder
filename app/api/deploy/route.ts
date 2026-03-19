@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
         type: 'github',
         repo: `${GITHUB_ORG}/${repoName}`,
       },
-      framework: codeFiles.some(f => f.filename === 'next.config.ts' || f.filename === 'next.config.js') ? 'nextjs' : null,
+      framework: codeFiles.some(f => f.filename === 'next.config.ts' || f.filename === 'next.config.js') ? 'nextjs' : (null as string | null),
       environmentVariables: [
         { key: 'ANTHROPIC_API_KEY', value: process.env.ANTHROPIC_API_KEY ?? '', type: 'encrypted', target: ['production', 'preview'] },
       ],
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
         type: 'github',
         org: GITHUB_ORG,
         repo: repoName,
-        ref: branch,
+        ref: 'main',
       },
       projectId: project.id,
       target: 'production',
