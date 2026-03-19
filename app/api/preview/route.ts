@@ -27,31 +27,42 @@ export async function POST(req: NextRequest) {
 
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      system: `You are a web app generator. Output ONLY a complete, self-contained index.html file.
+      max_tokens: 6000,
+      system: `You output ONLY raw HTML body content — no <!DOCTYPE>, no <html>, no <head>, no <body> tags, no <style> tags, no <script> tags.
 
-CRITICAL RULES:
-- Pure HTML/CSS/JS only — no frameworks, no npm, no external CDN imports
-- ALL content must be hardcoded directly in the HTML as visible text and elements — NOT rendered by JavaScript
-- The <body> must contain real visible HTML elements (divs, headings, paragraphs, buttons) with actual text
-- Use inline styles or a <style> block for a beautiful dark UI
-- JavaScript is only for interactions (click handlers, tab switching) — NEVER for rendering initial content
-- Include realistic hardcoded demo data: fake users, messages, charts, metrics, whatever fits the product
-- Background colors must NOT be pure black (#000) — use #0f0f1a or #111827 or similar dark but non-black
-- ALL text must be visible (light colors on dark background)
-- Output ONLY raw HTML starting with <!DOCTYPE html>`,
+Output ONLY the inner HTML that goes inside <body>: divs, sections, headers, cards, text, buttons, etc.
+
+Rules:
+- Use inline style attributes on every element for all styling
+- ALL content must be hardcoded text and elements — no JavaScript, no dynamic rendering
+- Include realistic fake/demo data: names, numbers, messages, metrics, whatever fits
+- Rich, detailed content — multiple sections, cards, lists
+- Dark theme: use style="background:#1e293b" or similar dark blues/grays, light text
+- Make it look like a real working app with data in it`,
       messages: [{
         role: 'user',
-        content: `Generate a complete demo for this product with all content hardcoded in HTML (not JS-rendered). Show the product name, description, and realistic fake data immediately:\n\n${specSnippet}\n\nReturn ONLY the raw HTML.`,
+        content: `Generate the body content (inline-styled HTML only, no scripts, no style tags) for this product demo. Include the product name as an <h1> and lots of realistic demo data:\n\n${specSnippet}`,
       }],
     })
 
-    const text = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
-    const html = text.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim()
+    const bodyContent = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
 
-    if (!html || !html.includes('<html')) {
+    if (!bodyContent) {
       return NextResponse.json({ error: 'Failed to generate preview' }, { status: 500 })
     }
+
+    // Wrap in a guaranteed-render HTML shell
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preview</title>
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh;">
+${bodyContent}
+</body>
+</html>`
 
     return NextResponse.json({ html })
   } catch (err) {
