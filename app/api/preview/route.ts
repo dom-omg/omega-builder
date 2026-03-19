@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+function extractHtmlFromOutput(output: string): string | null {
+  // Look for ```html filename="index.html" block anywhere in the output
+  const regex = /```html\s+filename="index\.html"\s*\n([\s\S]*?)```/i
+  const match = output.match(regex)
+  if (match) return match[1].trim()
+
+  // Fallback: any ```html block that looks like a full page
+  const fallback = /```html\s*\n([\s\S]*?```)/g
+  let m: RegExpExecArray | null
+  while ((m = fallback.exec(output)) !== null) {
+    const content = m[1].replace(/```$/, '').trim()
+    if (content.includes('<!DOCTYPE') || content.includes('<html')) return content
+  }
+  return null
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     const { data: build } = await supabase
       .from('builds')
-      .select('output, prompt, product_name, status')
+      .select('output, prompt, status')
       .eq('id', buildId)
       .eq('user_id', user.id)
       .single()
@@ -23,42 +36,10 @@ export async function POST(req: NextRequest) {
     if (!build) return NextResponse.json({ error: 'Build not found' }, { status: 404 })
     if (build.status !== 'complete') return NextResponse.json({ error: 'Build not complete' }, { status: 400 })
 
-    const specSnippet = (build.output ?? build.prompt ?? '').slice(0, 3000)
+    const html = extractHtmlFromOutput(build.output ?? '')
 
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      system: `You generate a complete self-contained HTML app for live preview inside an iframe.
-
-The app can use fetch('/api/chat') for AI features — this endpoint is available and works.
-
-/api/chat accepts: POST { messages: [{role, content}], system?: string }
-It streams SSE events. Each event is: data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
-Stream ends with: data: {"type":"message_stop"}
-
-STRUCTURE RULES:
-- Output a complete <!DOCTYPE html> page
-- ALL initial UI content must be hardcoded HTML — never JS-rendered on load
-- Use a <style> block in <head> for styling (dark theme, polished)
-- JS is allowed for: chat interactions, sending messages, rendering AI responses
-- Include a realistic hardcoded demo conversation or sample data so the app looks full immediately
-- The product must be usable: user can type and chat with the AI right away
-
-STYLE:
-- Dark theme: background #0f172a, cards #1e293b, text #f1f5f9
-- Clean, modern, polished — not generic
-- Fully responsive`,
-      messages: [{
-        role: 'user',
-        content: `Generate a complete interactive preview for this product. Include hardcoded demo content visible immediately AND a working chat interface that calls /api/chat:\n\n${specSnippet}\n\nReturn a complete <!DOCTYPE html> page.`,
-      }],
-    })
-
-    const text = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
-    const html = text.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim()
-
-    if (!html || !html.includes('<!DOCTYPE')) {
-      return NextResponse.json({ error: 'Failed to generate preview' }, { status: 500 })
+    if (!html) {
+      return NextResponse.json({ error: 'No preview found in build — try rebuilding' }, { status: 404 })
     }
 
     return NextResponse.json({ html })
