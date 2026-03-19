@@ -88,6 +88,27 @@ Code must be:
 ## 10. V2 RECOMMENDATIONS
 Top 3 features for V2 with strategic rationale.
 
+## 11. LIVE DEMO
+A self-contained, instantly deployable version of the product.
+Output exactly 2 files — nothing more:
+
+\`\`\`html filename="index.html"
+<!-- Complete single-file app. Vanilla HTML/CSS/JS only.
+     Use fetch('/api/chat') for any AI calls.
+     No build step. No framework. No imports from node_modules.
+     Must be fully functional and visually polished. -->
+\`\`\`
+
+\`\`\`javascript filename="api/chat.js"
+// Edge-compatible Vercel serverless function.
+// Must import @anthropic-ai/sdk at the top.
+// Must export: export const config = { runtime: 'edge' }
+// Must export default async function handler(req) { ... }
+// Streams Claude responses as SSE (text/event-stream).
+\`\`\`
+
+These 2 files will be auto-deployed to a live URL. They must work together perfectly.
+
 ════════════════════════════════════════
 QUALITY BAR
 ════════════════════════════════════════
