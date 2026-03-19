@@ -1,60 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const VERCEL_TOKEN = process.env.VERCEL_TOKEN
+const VERCEL_TOKEN = process.env.VERCEL_TOKEN!
 const VERCEL_TEAM = process.env.VERCEL_TEAM_ID ?? 'team_DuQZyAPRlGsj3jKMM84hqiAi'
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN!
+const GITHUB_ORG = 'dom-omg'
 
-interface CodeFile {
-  filename: string
-  code: string
-}
+interface CodeFile { filename: string; code: string }
 
 function parseCodeFiles(output: string): CodeFile[] {
   const files: CodeFile[] = []
   const regex = /```(?:\w+)\s+filename="([^"]+)"\n([\s\S]*?)```/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(output)) !== null) {
-    files.push({ filename: match[1], code: match[2].trim() })
+  let m: RegExpExecArray | null
+  while ((m = regex.exec(output)) !== null) {
+    files.push({ filename: m[1], code: m[2].trim() })
   }
   return files
 }
 
-function toBase64(str: string): string {
-  return Buffer.from(str, 'utf-8').toString('base64')
-}
-
 function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) + '-' + Math.random().toString(36).slice(2, 7)
+  return 'gen-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30)
+    + '-' + Date.now().toString(36)
 }
 
-function buildVercelFiles(codeFiles: CodeFile[]) {
-  const vercelFiles: { file: string; data: string; encoding: string }[] = []
+async function githubRequest(path: string, method = 'GET', body?: unknown) {
+  const res = await fetch(`https://api.github.com${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  return res.json()
+}
 
-  for (const f of codeFiles) {
-    vercelFiles.push({
-      file: f.filename,
-      data: toBase64(f.code),
-      encoding: 'base64',
-    })
-  }
-
-  // Auto-add package.json if missing and there are .js/.ts files
-  const hasApiFiles = codeFiles.some(f => f.filename.startsWith('api/'))
-  const hasPkg = codeFiles.some(f => f.filename === 'package.json')
-  if (hasApiFiles && !hasPkg) {
-    const pkgJson = JSON.stringify({
-      name: 'deployed-app',
-      version: '1.0.0',
-      dependencies: { '@anthropic-ai/sdk': '^0.39.0' },
-    }, null, 2)
-    vercelFiles.push({ file: 'package.json', data: toBase64(pkgJson), encoding: 'base64' })
-  }
-
-  return vercelFiles
+async function vercelRequest(path: string, method = 'GET', body?: unknown) {
+  const sep = path.includes('?') ? '&' : '?'
+  const res = await fetch(`https://api.vercel.com${path}${sep}teamId=${VERCEL_TEAM}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${VERCEL_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  return res.json()
 }
 
 export async function POST(req: NextRequest) {
@@ -66,7 +59,6 @@ export async function POST(req: NextRequest) {
     const { buildId } = await req.json() as { buildId: string }
     if (!buildId) return NextResponse.json({ error: 'Missing buildId' }, { status: 400 })
 
-    // Get the build
     const { data: build } = await supabase
       .from('builds')
       .select('output, product_name, status')
@@ -74,62 +66,105 @@ export async function POST(req: NextRequest) {
       .eq('user_id', user.id)
       .single()
 
-    if (!build?.output) return NextResponse.json({ error: 'Build not found or incomplete' }, { status: 404 })
-    if (build.status !== 'complete') return NextResponse.json({ error: 'Build not complete yet' }, { status: 400 })
+    if (!build?.output) return NextResponse.json({ error: 'Build not found' }, { status: 404 })
+    if (build.status !== 'complete') return NextResponse.json({ error: 'Build not complete' }, { status: 400 })
 
     const codeFiles = parseCodeFiles(build.output)
-    if (codeFiles.length === 0) return NextResponse.json({ error: 'No deployable files found in this build' }, { status: 400 })
+    if (codeFiles.length === 0) return NextResponse.json({ error: 'No deployable files in this build' }, { status: 400 })
 
-    const projectName = slugify(build.product_name ?? 'app')
-    const vercelFiles = buildVercelFiles(codeFiles)
+    const repoName = slugify(build.product_name ?? 'app')
 
-    // Deploy via Vercel API (file-based, no git)
-    const deployRes = await fetch(
-      `https://api.vercel.com/v13/deployments?teamId=${VERCEL_TEAM}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${VERCEL_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: projectName,
-          files: vercelFiles,
-          target: 'production',
-          projectSettings: {
-            framework: null,
-            buildCommand: null,
-            outputDirectory: null,
-          },
-          env: {
-            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
-          },
-        }),
-      }
-    )
+    // ── 1. Create GitHub repo ──────────────────────────────
+    const repo = await githubRequest(`/orgs/${GITHUB_ORG}/repos`, 'POST', {
+      name: repoName,
+      private: false,
+      auto_init: false,
+      description: `Generated by ΩBuilder — ${build.product_name ?? 'App'}`,
+    }) as { full_name?: string; html_url?: string; default_branch?: string; error?: string }
 
-    const deployData = await deployRes.json() as {
-      id?: string
-      url?: string
-      error?: { message: string }
-      readyState?: string
+    if (!repo.full_name) {
+      throw new Error(`GitHub repo creation failed: ${JSON.stringify(repo).slice(0, 200)}`)
     }
 
-    if (!deployRes.ok || deployData.error) {
-      throw new Error(deployData.error?.message ?? `Deploy failed: ${deployRes.status}`)
-    }
+    // ── 2. Push files to GitHub ────────────────────────────
+    // Get default branch SHA (need a base tree)
+    // For empty repo, create files directly
+    await new Promise(r => setTimeout(r, 1500)) // let GitHub init
 
-    const liveUrl = `https://${deployData.url}`
+    // Get repo info to check if init commit exists
+    const repoInfo = await githubRequest(`/repos/${GITHUB_ORG}/${repoName}`) as { default_branch?: string }
+    const branch = repoInfo.default_branch ?? 'main'
 
-    // Save live URL to the build
+    // Create a tree with all files
+    const treeItems = codeFiles.map(f => ({
+      path: f.filename,
+      mode: '100644',
+      type: 'blob',
+      content: f.code,
+    }))
+
+    // Create tree (no base_tree since repo is empty)
+    const tree = await githubRequest(`/repos/${GITHUB_ORG}/${repoName}/git/trees`, 'POST', {
+      tree: treeItems,
+    }) as { sha?: string }
+
+    if (!tree.sha) throw new Error('Failed to create git tree')
+
+    // Create commit
+    const commit = await githubRequest(`/repos/${GITHUB_ORG}/${repoName}/git/commits`, 'POST', {
+      message: `feat: initial build — generated by ΩBuilder`,
+      tree: tree.sha,
+    }) as { sha?: string }
+
+    if (!commit.sha) throw new Error('Failed to create commit')
+
+    // Create/update branch ref
+    await githubRequest(`/repos/${GITHUB_ORG}/${repoName}/git/refs`, 'POST', {
+      ref: `refs/heads/${branch}`,
+      sha: commit.sha,
+    })
+
+    // ── 3. Create Vercel project linked to GitHub ──────────
+    const project = await vercelRequest('/v10/projects', 'POST', {
+      name: repoName,
+      gitRepository: {
+        type: 'github',
+        repo: `${GITHUB_ORG}/${repoName}`,
+      },
+      framework: codeFiles.some(f => f.filename === 'next.config.ts' || f.filename === 'next.config.js') ? 'nextjs' : null,
+      environmentVariables: [
+        { key: 'ANTHROPIC_API_KEY', value: process.env.ANTHROPIC_API_KEY ?? '', type: 'encrypted', target: ['production', 'preview'] },
+      ],
+    }) as { id?: string; error?: { message: string } }
+
+    if (!project.id) throw new Error(`Vercel project creation failed: ${project.error?.message ?? 'unknown'}`)
+
+    // ── 4. Trigger deployment ──────────────────────────────
+    const deployment = await vercelRequest('/v13/deployments', 'POST', {
+      name: repoName,
+      gitSource: {
+        type: 'github',
+        org: GITHUB_ORG,
+        repo: repoName,
+        ref: branch,
+      },
+      projectId: project.id,
+      target: 'production',
+    }) as { url?: string; id?: string; error?: { message: string } }
+
+    if (!deployment.url) throw new Error(`Deployment failed: ${deployment.error?.message ?? 'unknown'}`)
+
+    const liveUrl = `https://${deployment.url}`
+
     await supabase
       .from('builds')
-      .update({ sections: { live_url: liveUrl, deploy_id: deployData.id } })
+      .update({ sections: { live_url: liveUrl, github_repo: repo.html_url } })
       .eq('id', buildId)
 
-    return NextResponse.json({ url: liveUrl, deployId: deployData.id })
+    return NextResponse.json({ url: liveUrl, github: repo.html_url })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Deploy failed'
+    console.error('[deploy]', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
