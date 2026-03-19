@@ -10,6 +10,16 @@ export async function POST(req: NextRequest) {
     const { prompt } = await req.json() as { prompt: string }
     if (!prompt?.trim()) return NextResponse.json({ error: 'Missing prompt' }, { status: 400 })
 
+    // Ensure profile exists (in case trigger didn't fire)
+    await supabase.from('profiles').upsert({
+      id: user.id,
+      email: user.email ?? '',
+      full_name: user.user_metadata?.full_name ?? null,
+      plan: 'free',
+      builds_used: 0,
+      builds_limit: 3,
+    }, { onConflict: 'id', ignoreDuplicates: true })
+
     const { data, error } = await supabase
       .from('builds')
       .insert({
