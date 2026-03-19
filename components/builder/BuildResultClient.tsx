@@ -443,7 +443,6 @@ export default function BuildResultClient({
           <iframe
             srcDoc={previewHtml}
             className="flex-1 w-full border-0"
-            sandbox="allow-scripts allow-forms allow-modals"
             title="App preview"
           />
         </div>

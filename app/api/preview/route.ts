@@ -32,17 +32,17 @@ export async function POST(req: NextRequest) {
 
 CRITICAL RULES:
 - Pure HTML/CSS/JS only — no frameworks, no npm, no external CDN imports
-- Must show rich, visible content IMMEDIATELY on load — never a blank or empty screen
-- Beautiful polished dark UI: deep backgrounds, gradients, clear typography
-- Include hardcoded demo/sample data so the app looks ALIVE and FULL
-- For any AI chat: show a realistic demo conversation already visible on load
-- For dashboards: show fake but realistic data, charts drawn with canvas/SVG
-- For tools: show example output already rendered
-- The goal: someone opening this should immediately say "wow, this is real"
+- ALL content must be hardcoded directly in the HTML as visible text and elements — NOT rendered by JavaScript
+- The <body> must contain real visible HTML elements (divs, headings, paragraphs, buttons) with actual text
+- Use inline styles or a <style> block for a beautiful dark UI
+- JavaScript is only for interactions (click handlers, tab switching) — NEVER for rendering initial content
+- Include realistic hardcoded demo data: fake users, messages, charts, metrics, whatever fits the product
+- Background colors must NOT be pure black (#000) — use #0f0f1a or #111827 or similar dark but non-black
+- ALL text must be visible (light colors on dark background)
 - Output ONLY raw HTML starting with <!DOCTYPE html>`,
       messages: [{
         role: 'user',
-        content: `Generate a complete interactive demo for this product. Include realistic sample data and demo content so it looks fully functional:\n\n${specSnippet}\n\nReturn ONLY the raw HTML.`,
+        content: `Generate a complete demo for this product with all content hardcoded in HTML (not JS-rendered). Show the product name, description, and realistic fake data immediately:\n\n${specSnippet}\n\nReturn ONLY the raw HTML.`,
       }],
     })
 
