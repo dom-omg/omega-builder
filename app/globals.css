@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { border-color: theme('colors.border'); }
+  html { color-scheme: dark; }
+  body { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2A2A42; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3A3A5A; }
+
+  ::selection { background: rgba(124, 58, 237, 0.35); }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #F1F5F9 0%, #A78BFA 60%, #7C3AED 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .surface-glow {
+    box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.15), 0 0 40px rgba(124, 58, 237, 0.08);
+  }
+
+  .stream-cursor::after {
+    content: '▋';
+    animation: blink 1s step-end infinite;
+    color: #7C3AED;
+    font-size: 0.9em;
+    margin-left: 1px;
+  }
+
+  .prose-omega h2 { @apply text-text font-semibold text-lg mt-8 mb-3; }
+  .prose-omega h3 { @apply text-text/90 font-medium mt-5 mb-2; }
+  .prose-omega p { @apply text-text/80 leading-relaxed mb-3; }
+  .prose-omega ul { @apply space-y-1 mb-4; }
+  .prose-omega li { @apply text-text/80 pl-4 relative; }
+  .prose-omega li::before { content: '—'; @apply absolute left-0 text-accent; }
+  .prose-omega strong { @apply text-text font-medium; }
+  .prose-omega code:not(pre code) {
+    @apply bg-surface text-accent font-mono text-sm px-1.5 py-0.5 rounded;
+  }
+}
