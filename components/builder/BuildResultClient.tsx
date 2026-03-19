@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Copy, Check, ChevronRight, Loader2, Download, ArrowLeft, Rocket, ExternalLink } from 'lucide-react'
+import { Copy, Check, ChevronRight, Loader2, Download, ArrowLeft, Rocket, ExternalLink, Play, X } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils/cn'
 import { SECTION_HEADERS, type SectionHeader } from '@/lib/ai/prompts'
@@ -147,6 +147,9 @@ export default function BuildResultClient({
   const [deploying, setDeploying] = useState(false)
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const outputRef = useRef(output)
   outputRef.current = output
 
@@ -212,6 +215,25 @@ export default function BuildResultClient({
 
   const availableSections = SECTION_HEADERS.filter(h => sections[h] || status === 'generating')
 
+  async function previewApp() {
+    setPreviewing(true)
+    setPreviewError(null)
+    try {
+      const res = await fetch('/api/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buildId }),
+      })
+      const data = await res.json() as { html?: string; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Preview failed')
+      setPreviewHtml(data.html ?? null)
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : 'Preview failed')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   async function deployLive() {
     setDeploying(true)
     setDeployError(null)
@@ -247,7 +269,7 @@ export default function BuildResultClient({
   return (
     <div className="flex h-full">
       {/* Section nav */}
-      <aside className="w-44 border-r border-border bg-surface shrink-0 py-4 px-2 space-y-0.5 overflow-y-auto">
+      <aside className="w-44 border-r border-border bg-surface shrink-0 py-4 px-2 space-y-0.5 overflow-y-auto" style={{ display: previewHtml ? 'none' : undefined }}>
         <Link href="/build" className="flex items-center gap-2 text-xs text-text-muted hover:text-text px-3 py-2 mb-2 transition-colors">
           <ArrowLeft size={12} /> New build
         </Link>
@@ -273,7 +295,7 @@ export default function BuildResultClient({
       </aside>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className={previewHtml ? 'hidden' : 'flex-1 overflow-y-auto'}>
         <div className="max-w-4xl mx-auto px-8 py-8">
           {/* Top bar */}
           <div className="flex items-start justify-between mb-8 gap-4">
@@ -295,7 +317,27 @@ export default function BuildResultClient({
               <p className="text-sm text-text-soft italic">&ldquo;{initialPrompt}&rdquo;</p>
             </div>
             {status === 'complete' && codeBlocks.length > 0 && (
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                {/* Preview button — primary action */}
+                {previewHtml ? (
+                  <button
+                    onClick={() => setPreviewHtml(null)}
+                    className="flex items-center gap-2 text-xs bg-primary/15 border border-primary/30 text-primary-light hover:bg-primary/25 px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <X size={12} />
+                    Close preview
+                  </button>
+                ) : (
+                  <button
+                    onClick={previewApp}
+                    disabled={previewing}
+                    className="flex items-center gap-2 text-xs bg-primary hover:bg-primary-hover text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+                  >
+                    {previewing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                    {previewing ? 'Generating...' : 'Preview app'}
+                  </button>
+                )}
+                {/* Deploy button — secondary */}
                 {liveUrl ? (
                   <a
                     href={liveUrl}
@@ -304,16 +346,16 @@ export default function BuildResultClient({
                     className="flex items-center gap-2 text-xs bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 px-3 py-2 rounded-lg transition-colors"
                   >
                     <ExternalLink size={12} />
-                    Open live app
+                    Open live
                   </a>
                 ) : (
                   <button
                     onClick={deployLive}
                     disabled={deploying}
-                    className="flex items-center gap-2 text-xs bg-primary hover:bg-primary-hover text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+                    className="flex items-center gap-2 text-xs bg-surface border border-border hover:border-border-bright text-text-soft hover:text-text px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
                   >
                     {deploying ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
-                    {deploying ? 'Deploying...' : 'Deploy live'}
+                    {deploying ? 'Deploying...' : 'Deploy'}
                   </button>
                 )}
                 <button
@@ -325,8 +367,8 @@ export default function BuildResultClient({
                 </button>
               </div>
             )}
-            {deployError && (
-              <p className="text-xs text-red-400 mt-1">{deployError}</p>
+            {(deployError || previewError) && (
+              <p className="text-xs text-red-400 mt-1">{deployError ?? previewError}</p>
             )}
           </div>
 
@@ -366,6 +408,46 @@ export default function BuildResultClient({
           )}
         </div>
       </div>
+      {/* Preview iframe panel */}
+      {previewHtml && (
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface shrink-0">
+            <span className="text-xs text-text-soft flex items-center gap-1.5">
+              <Play size={10} className="text-primary-light" />
+              Live preview
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={deployLive}
+                disabled={deploying}
+                className="flex items-center gap-1.5 text-xs text-text-soft hover:text-text transition-colors disabled:opacity-60"
+              >
+                {deploying ? <Loader2 size={10} className="animate-spin" /> : <Rocket size={10} />}
+                {deploying ? 'Deploying...' : 'Deploy live'}
+              </button>
+              {liveUrl && (
+                <a href={liveUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                  <ExternalLink size={10} />
+                  Open live
+                </a>
+              )}
+              <button
+                onClick={() => setPreviewHtml(null)}
+                className="text-text-muted hover:text-text transition-colors ml-2"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+          <iframe
+            srcDoc={previewHtml}
+            className="flex-1 w-full border-0"
+            sandbox="allow-scripts allow-forms allow-modals"
+            title="App preview"
+          />
+        </div>
+      )}
     </div>
   )
 }
