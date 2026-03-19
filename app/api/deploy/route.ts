@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const repoName = slugify(build.product_name ?? 'app')
 
     // ── 1. Create GitHub repo ──────────────────────────────
-    const repo = await githubRequest(`/orgs/${GITHUB_ORG}/repos`, 'POST', {
+    const repo = await githubRequest(`/user/repos`, 'POST', {
       name: repoName,
       private: false,
       auto_init: false,
