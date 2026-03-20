@@ -177,6 +177,7 @@ export default function BuildResultClient({
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        let gotDone = false
 
         while (true) {
           const { done, value } = await reader.read()
@@ -194,12 +195,19 @@ export default function BuildResultClient({
               if (event.type === 'delta' && event.text) {
                 setOutput(prev => prev + event.text)
               } else if (event.type === 'done') {
+                gotDone = true
                 setStatus('complete')
               } else if (event.type === 'error') {
                 setStatus('error')
               }
             } catch {}
           }
+        }
+
+        // Fallback: stream closed without 'done' event (edge timeout, etc.)
+        // If we received output, treat as complete — don't leave user stuck on spinner
+        if (!gotDone) {
+          setStatus(outputRef.current.length > 100 ? 'complete' : 'error')
         }
       } catch (err) {
         if ((err as Error).name !== 'AbortError') setStatus('error')
