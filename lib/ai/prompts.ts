@@ -138,7 +138,7 @@ export function buildUserPrompt(userIdea: string): string {
 
 "${userIdea}"
 
-Execute all 10 phases. Make strong decisions. Build the complete product.`
+Execute all 11 phases including the LIVE DEMO. Make strong decisions. Build the complete product.`
 }
 
 export const SECTION_HEADERS = [

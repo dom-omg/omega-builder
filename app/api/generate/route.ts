@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         try {
           const response = await anthropic.messages.stream({
             model: 'claude-sonnet-4-6',
-            max_tokens: 16000,
+            max_tokens: 32000,
             system: OMEGA_SYSTEM_PROMPT,
             messages: [{ role: 'user', content: buildUserPrompt(prompt) }],
           })
