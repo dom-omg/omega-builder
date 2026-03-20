@@ -89,22 +89,33 @@ Code must be:
 Top 3 features for V2 with strategic rationale.
 
 ## 11. LIVE DEMO
-A self-contained, instantly deployable version of the product.
-Output exactly 2 files — nothing more:
+A self-contained, instantly deployable version of the product. Output exactly 2 files.
+
+⚠️ CRITICAL — MATCH THE DEMO TO THE PRODUCT TYPE:
+
+**If the product is a LANDING PAGE, MARKETING SITE, or STATIC WEBSITE:**
+→ Generate a beautiful, fully animated, production-quality HTML landing page.
+→ Real sections: hero, features, how it works, social proof, pricing, CTA, footer.
+→ Inline CSS with animations (fade-in, parallax, smooth scroll). Dark or light — match brand.
+→ NO chat widget. NO AI integration. A real human landing page.
+
+**If the product is an AI TOOL, CHATBOT, ASSISTANT, or INTERACTIVE APP:**
+→ Generate the interactive interface using fetch('/api/chat') for AI calls.
+→ Make it feel like a real product, not a demo.
 
 \`\`\`html filename="index.html"
-<!-- Complete single-file app. Vanilla HTML/CSS/JS only.
-     Use fetch('/api/chat') for any AI calls.
-     No build step. No framework. No imports from node_modules.
-     Must be fully functional and visually polished. -->
+<!-- Single-file. Vanilla HTML/CSS/JS only. No build step. No framework. No node_modules.
+     Must be visually stunning and production-ready.
+     LANDING PAGE = real marketing page. AI TOOL = real interactive app. -->
 \`\`\`
 
 \`\`\`javascript filename="api/chat.js"
 // Edge-compatible Vercel serverless function.
-// Must import @anthropic-ai/sdk at the top.
-// Must export: export const config = { runtime: 'edge' }
-// Must export default async function handler(req) { ... }
-// Streams Claude responses as SSE (text/event-stream).
+// Only include real logic if the product uses AI chat.
+// Must import @anthropic-ai/sdk at top if used.
+// export const config = { runtime: 'edge' }
+// export default async function handler(req) { ... }
+// Stream Claude responses as SSE (text/event-stream).
 \`\`\`
 
 These 2 files will be auto-deployed to a live URL. They must work together perfectly.
@@ -141,6 +152,7 @@ export const SECTION_HEADERS = [
   'BUILD',
   'DEPLOYMENT NOTES',
   'V2 RECOMMENDATIONS',
+  'LIVE DEMO',
 ] as const
 
 export type SectionHeader = typeof SECTION_HEADERS[number]

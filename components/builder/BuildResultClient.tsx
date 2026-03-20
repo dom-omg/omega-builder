@@ -136,6 +136,7 @@ const SECTION_LABELS: Partial<Record<SectionHeader, string>> = {
   'BUILD': 'Code',
   'DEPLOYMENT NOTES': 'Deploy',
   'V2 RECOMMENDATIONS': 'V2',
+  'LIVE DEMO': 'Live Demo',
 }
 
 export default function BuildResultClient({
@@ -316,9 +317,9 @@ export default function BuildResultClient({
               </div>
               <p className="text-sm text-text-soft italic">&ldquo;{initialPrompt}&rdquo;</p>
             </div>
-            {status === 'complete' && codeBlocks.length > 0 && (
+            {status === 'complete' && (
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                {/* Preview button — primary action */}
+                {/* Launch App button — always visible on complete builds */}
                 {previewHtml ? (
                   <button
                     onClick={() => setPreviewHtml(null)}
@@ -331,10 +332,10 @@ export default function BuildResultClient({
                   <button
                     onClick={previewApp}
                     disabled={previewing}
-                    className="flex items-center gap-2 text-xs bg-primary hover:bg-primary-hover text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+                    className="flex items-center gap-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-60"
                   >
-                    {previewing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                    {previewing ? 'Generating...' : 'Preview app'}
+                    {previewing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                    {previewing ? 'Launching...' : 'Launch App'}
                   </button>
                 )}
                 {/* Deploy button — secondary */}
@@ -371,6 +372,24 @@ export default function BuildResultClient({
               <p className="text-xs text-red-400 mt-1">{deployError ?? previewError}</p>
             )}
           </div>
+
+          {/* Launch CTA banner — shown at top when complete and no preview open */}
+          {status === 'complete' && !previewHtml && (
+            <div className="mb-6 bg-primary/8 border border-primary/20 rounded-xl px-5 py-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-text">Your app is ready.</p>
+                <p className="text-xs text-text-soft mt-0.5">Click Launch App to see it running live.</p>
+              </div>
+              <button
+                onClick={previewApp}
+                disabled={previewing}
+                className="flex items-center gap-2 text-sm font-semibold bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg transition-colors shrink-0 disabled:opacity-60"
+              >
+                {previewing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                {previewing ? 'Launching...' : 'Launch App'}
+              </button>
+            </div>
+          )}
 
           {/* Section content */}
           {activeSection === 'BUILD' ? (
